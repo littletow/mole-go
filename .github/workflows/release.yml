@@ -241,7 +241,23 @@ jobs:
           echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_ENV
           echo "PKG_PATH=${PKG_PATH}" >> $GITHUB_ENV
 
-      - name: Show package (debug)
+      - name: Show package (Windows) (debug)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Write-Host "Package created: $env:PKG_NAME at $env:PKG_PATH"
+          if (Test-Path $env:PKG_PATH) {
+            Get-Item $env:PKG_PATH | Format-List Name,Length,FullName
+          } else {
+            Write-Host "Package not found at $env:PKG_PATH"
+            Write-Host "Listing bin/ for debug:"
+            Get-ChildItem -Path bin -Recurse | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+
+      - name: Show package (non-Windows) (debug)
+        if: matrix.os != 'windows-latest'
+        shell: bash
         run: |
           echo "Package created: $PKG_NAME at $PKG_PATH"
           ls -lh "$PKG_PATH" || true

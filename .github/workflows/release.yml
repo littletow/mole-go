@@ -1,5 +1,7 @@
 name: Release
 
+# Create one GitHub Release and let matrix build jobs upload their platform packages
+# 改动点：包名和二进制名不再硬编码（使用仓库名和 tag），并且自动检测 build 输出文件，便于以后改名时无需改构建脚本。
 on:
   push:
     tags:
@@ -10,7 +12,30 @@ permissions:
   contents: write
 
 jobs:
+  create-release:
+    name: Create release (once)
+    runs-on: ubuntu-latest
+    outputs:
+      upload_url: ${{ steps.create_release.outputs.upload_url }}
+      release_id: ${{ steps.create_release.outputs.id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          release_name: Release ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
   build:
+    name: Build and upload per-platform
+    needs: create-release
     strategy:
       matrix:
         include:
@@ -38,9 +63,11 @@ jobs:
               pkg_ext: ".tar.gz",
               suffix: "",
             }
-
     runs-on: ${{ matrix.os }}
-
+    # 全局环境：项目名使用仓库名，版本使用 tag 名（github.ref_name）
+    env:
+      PROJECT_NAME: ${{ github.event.repository.name }}
+      VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -48,93 +75,135 @@ jobs:
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
-          go-version: "1.25" # 设置为最新的 Go 1.25
+          go-version: "1.25"
 
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          # 2026 年 Wails 3 兼容性最高的依赖组合
-          sudo apt-get install -y unzip
-          sudo apt-get install -y pkg-config libgtk-3-dev
+          sudo apt-get install -y unzip pkg-config libgtk-3-dev
           sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
-          sudo apt-get install -y libayatana-appindicator3-dev # 用了系统托盘功能需要这个
+          sudo apt-get install -y libayatana-appindicator3-dev
 
       - name: Install Wails 3
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
-      # 1. 确保安装 unzip 并解压（Linux 环境可能需要安装）
       - name: Prepare bin resources
         shell: bash
         run: |
-          # 创建目录结构：resources/bin/
           mkdir -p resources/bin
-          # 解压缩到指定路径，确保文件路径如 resources/bin/frpc_windows_amd64.exe
-          unzip -o resources/bin.zip -d resources/bin/
+          unzip -o resources/bin.zip -d resources/bin/ || true
 
-      - name: Build App Windows
+      - name: Build App (Windows)
         if: matrix.os == 'windows-latest'
-        # 编译命令，由于是嵌入式，编译出的单个文件即包含完整功能
+        shell: bash
         run: |
+          set -e
+          echo "Building for ${{ matrix.platform }}..."
           # Wails 3 核心构建命令，官方真坑，文档上是-platform，可实际却报错，也不能指定生成物名称
-          # 执行构建
-          echo "Building for ${{ matrix.platform }} (CGO_ENABLED=$CGO_ENABLED)..."
           wails3 build
-          echo "==== Current Build Directory: bin ===="
-          ls -R bin
-          echo "==========================================="
+          echo "=== bin content ==="
+          ls -R bin || true
 
-      - name: Build App Not Windows
+      - name: Build App (non-Windows)
         if: matrix.os != 'windows-latest'
-        # 编译命令，由于是嵌入式，编译出的单个文件即包含完整功能
+        shell: bash
         run: |
-          # Wails 3 核心构建命令，官方真坑，文档上是-platform，可实际却报错，也不能指定生成物名称
-          # 根据平台区分 CGO
-          # macOS 和 Linux 必须开启 CGO
+          set -e
           GOPATH_BIN=$(go env GOPATH)/bin
           export PATH=$PATH:$GOPATH_BIN
           export CGO_ENABLED=1
-
-          # 执行构建
           echo "Building for ${{ matrix.platform }} (CGO_ENABLED=$CGO_ENABLED)..."
           wails3 build
-          echo "==== Current Build Directory: bin ===="
-          ls -R bin
-          echo "==========================================="
+          echo "=== bin content ==="
+          ls -R bin || true
 
-      - name: Archive Artifacts Windows
-        if: matrix.os == 'windows-latest'
+      - name: Detect output and create package
         shell: bash
         run: |
-          # 格式化包名，如 mole_windows_amd64.zip
-          PKG_NAME="mole_windows_amd64.zip"
-          # Windows: 压缩 mole.exe
-          7z a -tzip "$PKG_NAME" bin/myapp.exe
-          echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
-
-      - name: Archive Artifacts Not Windows
-        if: matrix.os != 'windows-latest'
-        shell: bash
-        run: |
-          # 格式化包名，如 mole_windows_amd64.zip
+          set -e
+          # matrix values are expanded by GH Actions at runtime
+          SUFFIX="${{ matrix.suffix }}"
+          PKG_EXT="${{ matrix.pkg_ext }}"
           SAFE_NAME=$(echo "${{ matrix.platform }}" | tr '/' '_')
-          PKG_NAME="mole_${SAFE_NAME}${{ matrix.pkg_ext }}"
+          PKG_NAME="${PROJECT_NAME}_${SAFE_NAME}_${VERSION}${PKG_EXT}"
+          PKG_PATH="${PWD}/${PKG_NAME}"
 
-          if [[ "${{ matrix.os }}" != *"ubuntu-latest"* ]]; then
-            # macOS: 压缩整个 .app 文件夹（Wails 3 默认生成 .app）
-            zip -r $PKG_NAME bin/myapp
+          echo "PROJECT_NAME=${PROJECT_NAME}"
+          echo "VERSION=${VERSION}"
+          echo "Looking for build outputs under ./bin ..."
+
+          # Try to find a binary file matching suffix under bin/
+          BIN_FILE=$(find bin -maxdepth 1 -type f -name "*${SUFFIX}" | head -n 1 || true)
+          # If not found, check for a directory (e.g. .app on macOS)
+          if [ -z "$BIN_FILE" ]; then
+            # find app bundle or any executable file inside bin
+            APP_DIR=$(find bin -maxdepth 1 -type d -name "*${PROJECT_NAME}*.app" -print -quit || true)
+            if [ -n "$APP_DIR" ]; then
+              echo "Found app bundle: $APP_DIR"
+              # zip the .app bundle
+              zip -r "$PKG_PATH" "$APP_DIR"
+            else
+              # try any file in bin (fallback)
+              ANY_BIN=$(find bin -maxdepth 1 -type f -print -quit || true)
+              if [ -n "$ANY_BIN" ]; then
+                BIN_FILE="$ANY_BIN"
+                echo "Using found binary: $BIN_FILE"
+                if [ "$PKG_EXT" = ".zip" ]; then
+                  zip -j "$PKG_PATH" "$BIN_FILE"
+                else
+                  # create tar.gz, place binary inside a folder named after PROJECT_NAME for nicer archive layout
+                  mkdir -p "${PROJECT_NAME}"
+                  cp "$BIN_FILE" "${PROJECT_NAME}/"
+                  tar -czvf "$PKG_PATH" "${PROJECT_NAME}"
+                  rm -rf "${PROJECT_NAME}"
+                fi
+              else
+                echo "No build output found in bin/ (expected binary or .app). Listing bin:"
+                ls -R bin || true
+                exit 1
+              fi
+            fi
           else
-            # Linux: 打包 mole 二进制为 tar.gz
-            #cd bin && tar -czvf ../$PKG_NAME myapp
-            tar -czvf $PKG_NAME bin/myapp
+            echo "Found binary file: $BIN_FILE"
+            if [ "$PKG_EXT" = ".zip" ]; then
+              zip -j "$PKG_PATH" "$BIN_FILE"
+            else
+              # tar gz: include binary under a folder named PROJECT_NAME for clarity
+              mkdir -p "${PROJECT_NAME}"
+              cp "$BIN_FILE" "${PROJECT_NAME}/"
+              tar -czvf "$PKG_PATH" "${PROJECT_NAME}"
+              rm -rf "${PROJECT_NAME}"
+            fi
           fi
 
-          echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
+          # Export package info for upload step
+          echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_ENV
+          echo "PKG_PATH=${PKG_PATH}" >> $GITHUB_ENV
 
-      - name: Create Release Draft
-        uses: softprops/action-gh-release@v2
+      - name: Show package (debug)
+        run: |
+          echo "Package created: $PKG_NAME at $PKG_PATH"
+          ls -lh "$PKG_PATH" || true
+
+      - name: Upload release asset (zip)
+        if: matrix.pkg_ext == '.zip'
+        uses: actions/upload-release-asset@v1
         with:
-          files: ${{ matrix.release_name }}
-          draft: false
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ env.PKG_PATH }}
+          asset_name: ${{ env.PKG_NAME }}
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release asset (tar.gz)
+        if: matrix.pkg_ext == '.tar.gz'
+        uses: actions/upload-release-asset@v1
+        with:
+          upload_url: ${{ needs.create-release.outputs.upload_url }}
+          asset_path: ${{ env.PKG_PATH }}
+          asset_name: ${{ env.PKG_NAME }}
+          asset_content_type: application/gzip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

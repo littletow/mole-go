@@ -44,11 +44,15 @@ jobs:
           sudo apt-get install -y libayatana-appindicator3-dev # 用了系统托盘功能需要这个
 
       - name: Install Wails 3
-        run: go install github.com
+        run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
       - name: Build App
         # 编译命令，由于是嵌入式，编译出的单个文件即包含完整功能
-        run: wails3 build -platform ${{ matrix.platform }} -o mole
+        run: |
+          # 确保环境变量包含 go/bin
+          export PATH=$PATH:$(go env GOPATH)/bin
+          export CGO_ENABLED=1
+          wails3 build -platform ${{ matrix.platform }} -o mole
 
       - name: Archive Artifacts
         shell: bash

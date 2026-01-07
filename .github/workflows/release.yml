@@ -4,24 +4,58 @@ on:
   push:
     tags:
       - "v*" # 推送 v1.0.0 这种标签时触发
+  workflow_dispatch:
 
 jobs:
   build:
     strategy:
       matrix:
         include:
-          - os: windows-latest
-            platform: windows/amd64
-            artifact_raw: build/bin/mole.exe
-            release_name: mole_windows_amd64.zip
-          - os: macos-latest
-            platform: darwin/universal
-            artifact_raw: build/bin/mole.app
-            release_name: mole_macos_universal.zip
-          - os: ubuntu-latest
-            platform: linux/amd64
-            artifact_raw: build/bin/mole
-            release_name: mole_linux_amd64.tar.gz
+          # Windows - 习惯使用 .zip
+          - {
+              os: windows-latest,
+              target_os: windows,
+              arch: amd64,
+              suffix: ".exe",
+              pkg_ext: ".zip",
+            }
+          - {
+              os: windows-latest,
+              target_os: windows,
+              arch: arm64,
+              suffix: ".exe",
+              pkg_ext: ".zip",
+            }
+          # macOS - 必须压缩整个 .app 文件夹
+          - {
+              os: macos-latest,
+              target_os: darwin,
+              arch: amd64,
+              suffix: ".app",
+              pkg_ext: ".zip",
+            }
+          - {
+              os: macos-latest,
+              target_os: darwin,
+              arch: arm64,
+              suffix: ".app",
+              pkg_ext: ".zip",
+            }
+          # Linux - 习惯使用 .tar.gz
+          - {
+              os: ubuntu-latest,
+              target_os: linux,
+              arch: amd64,
+              suffix: "",
+              pkg_ext: ".tar.gz",
+            }
+          - {
+              os: ubuntu-latest,
+              target_os: linux,
+              arch: arm64,
+              suffix: "",
+              pkg_ext: ".tar.gz",
+            }
 
     runs-on: ${{ matrix.os }}
 
@@ -39,6 +73,7 @@ jobs:
         run: |
           sudo apt-get update
           # 2026 年 Wails 3 兼容性最高的依赖组合
+          sudo apt-get install -y unzip
           sudo apt-get install -y pkg-config libgtk-3-dev
           sudo apt-get install -y libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
           sudo apt-get install -y libayatana-appindicator3-dev # 用了系统托盘功能需要这个
@@ -46,27 +81,40 @@ jobs:
       - name: Install Wails 3
         run: go install github.com/wailsapp/wails/v3/cmd/wails3@latest
 
+      # 1. 确保安装 unzip 并解压（Linux 环境可能需要安装）
+      - name: Prepare bin resources
+        shell: bash
+        run: |
+          # 创建目录结构：resources/bin/
+          mkdir -p resources/bin
+          # 解压缩到指定路径，确保文件路径如 resources/bin/frpc_windows_amd64.exe
+          unzip -o resources/bin.zip -d resources/bin/
+
       - name: Build App
         # 编译命令，由于是嵌入式，编译出的单个文件即包含完整功能
         run: |
-          # 确保环境变量包含 go/bin
           export PATH=$PATH:$(go env GOPATH)/bin
           export CGO_ENABLED=1
-          wails3 build -platform ${{ matrix.platform }} -o mole
+          # Wails 3 核心构建命令
+          wails3 build -os ${{ matrix.target_os }} -arch ${{ matrix.arch }} -o mole${{ matrix.suffix }}
 
       - name: Archive Artifacts
         shell: bash
         run: |
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            # Windows 直接压缩 exe
-            zip -j ${{ matrix.release_name }} ${{ matrix.artifact_raw }}
-          elif [ "${{ matrix.os }}" = "macos-latest" ]; then
-            # macOS 压缩 .app 文件夹
-            zip -r ${{ matrix.release_name }} ${{ matrix.artifact_raw }}
+          PKG_NAME="mole_${{ matrix.target_os }}_${{ matrix.arch }}${{ matrix.pkg_ext }}"
+
+          if [ "${{ matrix.target_os }}" = "darwin" ]; then
+            # macOS: 递归压缩 .app
+            zip -r $PKG_NAME build/bin/mole.app
+          elif [ "${{ matrix.target_os }}" = "windows" ]; then
+            # Windows: 压缩 exe
+            cd build/bin && zip ../../$PKG_NAME mole.exe
           else
-            # Linux 打包成 tar.gz
-            tar -cvzf ${{ matrix.release_name }} -C build/bin mole
+            # Linux: 打包为 tar.gz
+            cd build/bin && tar -czvf ../../$PKG_NAME mole
           fi
+
+          echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
 
       - name: Create Release Draft
         uses: softprops/action-gh-release@v2

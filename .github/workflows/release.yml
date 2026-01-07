@@ -1,7 +1,10 @@
 name: Release
 
-# Create one GitHub Release and let matrix build jobs upload their platform packages
-# 改动点：包名和二进制名不再硬编码（使用仓库名和 tag），并且自动检测 build 输出文件，便于以后改名时无需改构建脚本。
+# Create one GitHub Release (find or create draft) and let matrix build jobs upload
+# their platform packages to that same release
+# 行为：
+# - 如果该 tag 已存在 release，则复用它（无论 draft 还是已发布），并返回 upload_url。
+# - 如果不存在，则创建一个 draft release（便于在网页中编辑标题/内容后再 Publish）。
 on:
   push:
     tags:
@@ -13,25 +16,62 @@ permissions:
 
 jobs:
   create-release:
-    name: Create release (once)
+    name: Find or create release (draft)
     runs-on: ubuntu-latest
     outputs:
-      upload_url: ${{ steps.create_release.outputs.upload_url }}
-      release_id: ${{ steps.create_release.outputs.id }}
+      upload_url: ${{ steps.find_or_create_release.outputs.upload_url }}
+      release_id: ${{ steps.find_or_create_release.outputs.release_id }}
+      existing: ${{ steps.find_or_create_release.outputs.existing }}
+      draft: ${{ steps.find_or_create_release.outputs.draft }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: actions/create-release@v1
+      - name: Find or create release (draft) using GitHub API
+        id: find_or_create_release
+        uses: actions/github-script@v6
         with:
-          tag_name: ${{ github.ref_name }}
-          release_name: Release ${{ github.ref_name }}
-          draft: false
-          prerelease: false
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const core = require('@actions/core');
+            const tag = process.env.TAG_NAME;
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+
+            // Try to get release by tag
+            try {
+              const { data: release } = await github.rest.repos.getReleaseByTag({
+                owner,
+                repo,
+                tag
+              });
+              core.info(`Found existing release id=${release.id}, draft=${release.draft}`);
+              core.setOutput('upload_url', release.upload_url);
+              core.setOutput('release_id', String(release.id));
+              core.setOutput('existing', 'true');
+              core.setOutput('draft', release.draft ? 'true' : 'false');
+            } catch (err) {
+              if (err.status === 404) {
+                core.info(`No release for tag ${tag}, creating draft release...`);
+                const { data: newRelease } = await github.rest.repos.createRelease({
+                  owner,
+                  repo,
+                  tag_name: tag,
+                  name: `Release ${tag}`,
+                  body: '',       // 留空，方便在网页上填写 release notes
+                  draft: true,    // 创建为草稿，便于手动编辑后再发布
+                  prerelease: false
+                });
+                core.setOutput('upload_url', newRelease.upload_url);
+                core.setOutput('release_id', String(newRelease.id));
+                core.setOutput('existing', 'false');
+                core.setOutput('draft', newRelease.draft ? 'true' : 'false');
+              } else {
+                throw err;
+              }
+            }
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ github.ref_name }}
 
   build:
     name: Build and upload per-platform
@@ -64,7 +104,6 @@ jobs:
               suffix: "",
             }
     runs-on: ${{ matrix.os }}
-    # 全局环境：项目名使用仓库名，版本使用 tag 名（github.ref_name）
     env:
       PROJECT_NAME: ${{ github.event.repository.name }}
       VERSION: ${{ github.ref_name }}
@@ -100,7 +139,6 @@ jobs:
         run: |
           set -e
           echo "Building for ${{ matrix.platform }}..."
-          # Wails 3 核心构建命令，官方真坑，文档上是-platform，可实际却报错，也不能指定生成物名称
           wails3 build
           echo "=== bin content ==="
           ls -R bin || true
@@ -122,7 +160,6 @@ jobs:
         shell: bash
         run: |
           set -e
-          # matrix values are expanded by GH Actions at runtime
           SUFFIX="${{ matrix.suffix }}"
           PKG_EXT="${{ matrix.pkg_ext }}"
           SAFE_NAME=$(echo "${{ matrix.platform }}" | tr '/' '_')
@@ -135,16 +172,15 @@ jobs:
 
           # Try to find a binary file matching suffix under bin/
           BIN_FILE=$(find bin -maxdepth 1 -type f -name "*${SUFFIX}" | head -n 1 || true)
-          # If not found, check for a directory (e.g. .app on macOS)
+
           if [ -z "$BIN_FILE" ]; then
-            # find app bundle or any executable file inside bin
+            # find .app bundle matching project name
             APP_DIR=$(find bin -maxdepth 1 -type d -name "*${PROJECT_NAME}*.app" -print -quit || true)
             if [ -n "$APP_DIR" ]; then
               echo "Found app bundle: $APP_DIR"
-              # zip the .app bundle
               zip -r "$PKG_PATH" "$APP_DIR"
             else
-              # try any file in bin (fallback)
+              # fallback: pick any file in bin/
               ANY_BIN=$(find bin -maxdepth 1 -type f -print -quit || true)
               if [ -n "$ANY_BIN" ]; then
                 BIN_FILE="$ANY_BIN"
@@ -152,7 +188,6 @@ jobs:
                 if [ "$PKG_EXT" = ".zip" ]; then
                   zip -j "$PKG_PATH" "$BIN_FILE"
                 else
-                  # create tar.gz, place binary inside a folder named after PROJECT_NAME for nicer archive layout
                   mkdir -p "${PROJECT_NAME}"
                   cp "$BIN_FILE" "${PROJECT_NAME}/"
                   tar -czvf "$PKG_PATH" "${PROJECT_NAME}"
@@ -169,7 +204,6 @@ jobs:
             if [ "$PKG_EXT" = ".zip" ]; then
               zip -j "$PKG_PATH" "$BIN_FILE"
             else
-              # tar gz: include binary under a folder named PROJECT_NAME for clarity
               mkdir -p "${PROJECT_NAME}"
               cp "$BIN_FILE" "${PROJECT_NAME}/"
               tar -czvf "$PKG_PATH" "${PROJECT_NAME}"
@@ -177,7 +211,6 @@ jobs:
             fi
           fi
 
-          # Export package info for upload step
           echo "PKG_NAME=${PKG_NAME}" >> $GITHUB_ENV
           echo "PKG_PATH=${PKG_PATH}" >> $GITHUB_ENV
 

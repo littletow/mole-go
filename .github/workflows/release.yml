@@ -156,7 +156,37 @@ jobs:
           echo "=== bin content ==="
           ls -R bin || true
 
-      - name: Detect output and create package
+      - name: Detect output and create package (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          $SUFFIX = '${{ matrix.suffix }}'
+          $PKG_EXT = '${{ matrix.pkg_ext }}'
+          $SAFE = '${{ matrix.platform }}' -replace '/','_'
+          $PROJECT_NAME = $env:PROJECT_NAME
+          $VERSION = $env:VERSION
+          $PKG_NAME = "${PROJECT_NAME}_${SAFE}_${VERSION}${PKG_EXT}"
+          $PKG_PATH = Join-Path $PWD $PKG_NAME
+
+          Write-Host "PROJECT_NAME=$PROJECT_NAME"
+          Write-Host "VERSION=$VERSION"
+          Write-Host "Looking for build outputs under ./bin matching *$SUFFIX ..."
+
+          $BIN = Get-ChildItem -Path 'bin' -File -Filter "*$SUFFIX" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($null -eq $BIN) {
+            Write-Host "No build output found in bin/; listing contents for debug:"
+            Get-ChildItem -Path bin -Recurse | ForEach-Object { Write-Host $_.FullName }
+            exit 1
+          }
+
+          Write-Host "Found binary file: $($BIN.FullName)"
+          Compress-Archive -Path $BIN.FullName -DestinationPath $PKG_PATH -Force
+
+          "PKG_NAME=$PKG_NAME" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "PKG_PATH=$PKG_PATH" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Detect output and create package (non-Windows)
+        if: matrix.os != 'windows-latest'
         shell: bash
         run: |
           set -e
@@ -170,17 +200,14 @@ jobs:
           echo "VERSION=${VERSION}"
           echo "Looking for build outputs under ./bin ..."
 
-          # Try to find a binary file matching suffix under bin/
           BIN_FILE=$(find bin -maxdepth 1 -type f -name "*${SUFFIX}" | head -n 1 || true)
 
           if [ -z "$BIN_FILE" ]; then
-            # find .app bundle matching project name
             APP_DIR=$(find bin -maxdepth 1 -type d -name "*${PROJECT_NAME}*.app" -print -quit || true)
             if [ -n "$APP_DIR" ]; then
               echo "Found app bundle: $APP_DIR"
               zip -r "$PKG_PATH" "$APP_DIR"
             else
-              # fallback: pick any file in bin/
               ANY_BIN=$(find bin -maxdepth 1 -type f -print -quit || true)
               if [ -n "$ANY_BIN" ]; then
                 BIN_FILE="$ANY_BIN"

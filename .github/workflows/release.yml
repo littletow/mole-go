@@ -1,10 +1,10 @@
 name: Release
 
 # Create one GitHub Release (find or create draft) and let matrix build jobs upload
-# their platform packages to that same release
+# their platform packages to that same release (方案 A)。
 # 行为：
 # - 如果该 tag 已存在 release，则复用它（无论 draft 还是已发布），并返回 upload_url。
-# - 如果不存在，则创建一个 draft release（便于在网页中编辑标题/内容后再 Publish）。
+# - 如果不存在，则创建一个 draft release（便于你在网页中编辑标题/内容后再 Publish）。
 on:
   push:
     tags:
@@ -33,7 +33,7 @@ jobs:
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const core = require('@actions/core');
+            // core, github, context are injected by actions/github-script
             const tag = process.env.TAG_NAME;
             const owner = context.repo.owner;
             const repo = context.repo.repo;
@@ -58,7 +58,7 @@ jobs:
                   repo,
                   tag_name: tag,
                   name: `Release ${tag}`,
-                  body: '',       // 留空，方便在网页上填写 release notes
+                  body: '',       // 留空，方便你在网页上填写 release notes
                   draft: true,    // 创建为草稿，便于手动编辑后再发布
                   prerelease: false
                 });

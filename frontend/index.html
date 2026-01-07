@@ -1,0 +1,274 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="stylesheet" href="/style.css" />
+    <title>FRP 控制面板</title>
+</head>
+
+<body>
+    <div class="app-wrapper">
+        <!-- 侧边导航栏 -->
+        <aside class="sidebar">
+            <div class="brand">FRP Manager</div>
+            <nav id="tabs">
+                <button onclick="App.showTab('main')" class="nav-item active" data-tab="main">控制面板</button>
+                <button onclick="App.showTab('config')" class="nav-item" data-tab="config">配置页面</button>
+                <button onclick="App.showTab('logs')" class="nav-item" data-tab="logs">运行日志</button>
+                <button onclick="App.showTab('help')" class="nav-item" data-tab="help">关于与支持</button>
+            </nav>
+            <div class="version">v1.0.0</div>
+        </aside>
+
+        <!-- 主内容区 -->
+        <main class="content">
+
+            <!-- 1. 控制面板 (首页) -->
+            <section id="main" class="tab-content active">
+                <!-- 核心状态看板 -->
+                <div class="card hero-status-card">
+                    <div class="status-main">
+                        <div class="status-visual">
+                            <!-- 这里的 SVG 动效会随状态改变颜色 -->
+                            <svg class="status-svg" viewBox="0 0 100 100">
+                                <circle cx="50" cy="50" r="45" class="bg-circle"></circle>
+                                <circle cx="50" cy="50" r="45" class="active-circle"></circle>
+                            </svg>
+                            <div class="status-icon-inner">🚀</div>
+                        </div>
+                        <div class="status-info">
+                            <h1 id="status-text">Ready</h1>
+                            <p id="status-msg">准备好建立内网穿透隧道</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 操作区 -->
+                <div class="main-actions">
+                    <button id="conn-btn" class="btn-hero" onclick="App.toggleConnect()">
+                        <span class="btn-text">立即建立连接</span>
+                        <span class="btn-sub">Establish FRP Tunnel</span>
+                    </button>
+                </div>
+
+                <!-- 运行概览 -->
+                <div id="url-panel" class="card stats-grid" style="display: none;">
+                    <div class="stat-box">
+                        <label>快速访问地址</label>
+                        <div class="url-copy-wrapper">
+                            <code id="subdomain-url">fetching...</code>
+                            <button class="btn-mini-copy" onclick="App.copyURL()">复制</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 2. 配置页面 -->
+            <section id="config" class="tab-content">
+                <!-- 服务端全局配置 -->
+                <div class="card compact-card">
+                    <div class="card-header-compact">
+                        <h3>服务端设置</h3>
+                        <div class="header-right">
+                            <!-- 自动启动开关移到这里，节省纵向空间 -->
+                            <label class="mini-switch">
+                                <input type="checkbox" id="server-autostart" checked>
+                                <span class="mini-switch-text">自动连接</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- 两列布局容器 -->
+                    <div class="form-grid-2">
+                        <div class="form-group-mini">
+                            <label>服务器地址</label>
+                            <input type="text" id="server-addr" placeholder="x.x.x.x">
+                        </div>
+                        <div class="form-group-mini">
+                            <label>端口</label>
+                            <input type="number" id="server-port" placeholder="7000">
+                        </div>
+                    </div>
+
+                    <div class="form-grid-2">
+                        <div class="form-group-mini">
+                            <label>鉴权 Token</label>
+                            <input type="password" id="server-token" placeholder="Authentication Token">
+                        </div>
+                        <div class="form-group-mini">
+                            <label>备注</label>
+                            <input type="text" id="server-remark" placeholder="">
+                        </div>
+                    </div>
+                </div>
+                <!-- 代理规则动态管理 -->
+                <div class="proxy-list-header">
+                    <h3>代理规则映射 (最多3条)</h3>
+                    <button class="btn btn-outline" id="add-proxy-btn" onclick="App.addProxy()">+ 添加规则</button>
+                </div>
+
+                <div id="proxy-container">
+                    <!-- 动态生成的卡片将由 JS 插入此处 -->
+                </div>
+
+                <!-- 配置操作页脚 -->
+                <div class="form-actions-main">
+                    <button class="btn btn-primary" id="save-all-config" onclick="App.saveAllConfig()">保存并应用配置</button>
+                    <span id="save-status" class="status-msg" style="margin-left: 15px;"></span>
+                </div>
+            </section>
+
+            <!-- 3. 运行日志页面 -->
+            <section id="logs" class="tab-content">
+                <div class="card log-container">
+                    <!-- 优化后的头部工具栏 -->
+                    <div class="log-toolbar">
+                        <div class="log-title-group">
+                            <span class="pulse-icon"></span>
+                            <h3>实时运行日志</h3>
+                        </div>
+                        <div class="log-actions">
+                            <button class="btn-toolbar" onclick="App.clearLogs()" title="清空所有日志内容">
+                                <span class="icon">🧹</span>
+                                <span>清空日志</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 日志容器 -->
+                    <div id="log-list" class="log-viewer"></div>
+                </div>
+            </section>
+
+            <!-- 4. 关于与支持 (合并版) -->
+            <section id="help" class="tab-content">
+                <!-- 2. 底部引流 (高质感长条) -->
+                <div class="mega-tutorial-box" onclick="App.openExternal('https://www.91demo.top')">
+                    <div class="mega-content">
+                        <div class="mega-icon">📚</div>
+                        <div class="mega-info">
+                            <strong>查看更多Mole教程与资料</strong>
+                            <p>包含 Nginx 反向代理配置、SSL 证书自动续签、多用户 FRP 隔离等硬核内容。</p>
+                        </div>
+                        <div class="mega-arrow">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M12 4l-1.41 1.41L16.17 11H4v2h12.17l-5.58 5.59L12 20l8-8z" />
+                            </svg>
+                        </div>
+                    </div>
+                </div>
+                <!-- 1. 细致的使用指引 (卡片风格) -->
+                <div class="card help-card">
+                    <h3>使用指南</h3>
+                    <div class="steps-container">
+                        <div class="step-item">
+                            <div class="step-icon">1</div>
+                            <div class="step-body"><strong>填写配置</strong>：输入 frps 服务器信息及 Token。</div>
+                        </div>
+                        <div class="step-item">
+                            <div class="step-icon">2</div>
+                            <div class="step-body"><strong>定义代理</strong>：添加 TCP/HTTP 规则，注意端口不要冲突。</div>
+                        </div>
+                        <div class="step-item">
+                            <div class="step-icon">3</div>
+                            <div class="step-body"><strong>一键穿透</strong>：点击主面板连接，日志页查看实时进度。</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="card detail-guide-card">
+                    <div class="card-header-flex">
+                        <h3>代理协议指南</h3>
+                        <span class="badge-tag">FRP v0.65 Standard</span>
+                    </div>
+
+                    <div class="guide-grid">
+                        <div class="guide-item">
+                            <span class="guide-icon">🌐</span>
+                            <div class="guide-text">
+                                <strong>HTTP 代理</strong>
+                                <p>必须填写<b>自定义域名</b>。服务端需配置 vhost 端口，推荐配合 Nginx 实现 80/443 转发。</p>
+                            </div>
+                        </div>
+                        <div class="guide-item">
+                            <span class="guide-icon">🔒</span>
+                            <div class="guide-text">
+                                <strong>HTTPS 进阶</strong>
+                                <p>为保证安全，建议在服务器端 Nginx 统一配置 SSL 证书。详见下方的<b>进阶教程</b>。</p>
+                            </div>
+                        </div>
+                        <div class="guide-item">
+                            <span class="guide-icon">🔌</span>
+                            <div class="guide-text">
+                                <strong>TCP / UDP 转发</strong>
+                                <p>必须手动指定<b>远程端口</b>（需在服务端防火墙开放）。适用于远程桌面、游戏、SSH等。</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
+            </section>
+
+        </main>
+    </div>
+
+    <!-- 代理卡片模板 -->
+    <template id="proxy-template">
+        <div class="card proxy-card" data-id="">
+            <!-- 1. 顶部标识栏：类型标签 + 启用开关 -->
+            <div class="card-top-bar">
+                <div class="proxy-type-tag">HTTP</div>
+                <div class="top-actions">
+                    <label class="switch-label">
+                        <input type="checkbox" class="p-enabled" checked>
+                        <span class="switch-text">启用规则</span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- 2. 中部填写区 (保持不变) -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label>代理名称</label>
+                    <input type="text" class="p-name" placeholder="eg: my-web">
+                </div>
+                <div class="form-group">
+                    <label>本地端口</label>
+                    <input type="number" class="p-local-port" value="8080">
+                </div>
+            </div>
+
+            <!-- 动态切换区域 -->
+            <div class="form-group domain-group">
+                <label>访问域名</label>
+                <input type="text" class="p-domain" placeholder="web.yourdomain.com">
+            </div>
+            <div class="form-group port-group" style="display: none;">
+                <label>远程映射端口</label>
+                <input type="number" class="p-remote-port" placeholder="如: 6000">
+            </div>
+
+            <!-- 3. 底部底栏：协议选择 + 删除 -->
+            <div class="proxy-footer">
+                <div class="type-selector">
+                    <label class="tiny-label">协议类型</label>
+                    <select class="p-type-select" onchange="App.handleProxyTypeChange(this)">
+                        <option value="http">HTTP 代理</option>
+                        <option value="tcp">TCP 转发</option>
+                        <option value="udp">UDP 转发</option>
+                    </select>
+                </div>
+                <button class="btn-delete-text" onclick="App.removeProxy(this)">
+                    <span class="icon">🗑️</span> 删除此规则
+                </button>
+            </div>
+        </div>
+    </template>
+
+    <!-- Wails3 脚本载入 -->
+    <script type="module" src="/src/main.js"></script>
+</body>
+
+</html>

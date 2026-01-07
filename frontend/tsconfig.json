@@ -1,0 +1,16 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "moduleResolution": "bundler",
+    "target": "ESNext",
+    "module": "ESNext",
+    "resolveJsonModule": true,
+    "checkJs": false,
+    "strict": true,
+    "skipLibCheck": true,
+  },
+  "include": [
+    "src",
+    "bindings"
+  ]
+}

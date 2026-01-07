@@ -2,9 +2,10 @@ name: Release
 
 # Create one GitHub Release (find or create draft) and let matrix build jobs upload
 # their platform packages to that same release (方案 A)。
-# 行为：
+# 特性：
 # - 如果该 tag 已存在 release，则复用它（无论 draft 还是已发布），并返回 upload_url。
 # - 如果不存在，则创建一个 draft release（便于你在网页中编辑标题/内容后再 Publish）。
+# - 上传前会尝试删除同名的已存在 asset（避免 Validation Failed: already_exists）。
 on:
   push:
     tags:
@@ -38,7 +39,6 @@ jobs:
             const owner = context.repo.owner;
             const repo = context.repo.repo;
 
-            // Try to get release by tag
             try {
               const { data: release } = await github.rest.repos.getReleaseByTag({
                 owner,
@@ -105,7 +105,8 @@ jobs:
             }
     runs-on: ${{ matrix.os }}
     env:
-      PROJECT_NAME: ${{ github.event.repository.name }}
+      # 固定项目名为 mole（你要求的）
+      PROJECT_NAME: mole
       VERSION: ${{ github.ref_name }}
     steps:
       - name: Checkout code
@@ -261,6 +262,41 @@ jobs:
         run: |
           echo "Package created: $PKG_NAME at $PKG_PATH"
           ls -lh "$PKG_PATH" || true
+
+      - name: Delete same-named release asset if exists
+        id: delete_asset
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            // github, context injected
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const release_id = parseInt(process.env.RELEASE_ID || '0', 10);
+            const assetName = process.env.ASSET_NAME;
+            if (!release_id || !assetName) {
+              core.info('No release_id or asset name provided, skipping delete step.');
+              core.setOutput('deleted', 'false');
+              return;
+            }
+            core.info(`Looking for existing asset "${assetName}" in release ${release_id}...`);
+            const assets = await github.rest.repos.listReleaseAssets({
+              owner, repo, release_id
+            });
+            const found = assets.data.find(a => a.name === assetName);
+            if (found) {
+              core.info(`Found existing asset id=${found.id}, deleting...`);
+              await github.rest.repos.deleteReleaseAsset({
+                owner, repo, asset_id: found.id
+              });
+              core.setOutput('deleted', 'true');
+            } else {
+              core.info('No existing asset with that name.');
+              core.setOutput('deleted', 'false');
+            }
+        env:
+          RELEASE_ID: ${{ needs.create-release.outputs.release_id }}
+          ASSET_NAME: ${{ env.PKG_NAME }}
 
       - name: Upload release asset (zip)
         if: matrix.pkg_ext == '.zip'

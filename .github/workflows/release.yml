@@ -74,8 +74,11 @@ jobs:
         run: |
           export PATH=$PATH:$(go env GOPATH)/bin
           export CGO_ENABLED=1
-          # Wails 3 核心构建命令
-          wails3 build -platform ${{ matrix.platform }} -o mole${{ matrix.suffix }}
+          # Wails 3 核心构建命令，官方真坑，文档上是-platform，可实际却报错，也不能指定生成物名称
+          wails3 build
+          echo "==== Current Build Directory: build/bin ===="
+          ls -R build/bin
+          echo "==========================================="
 
       - name: Archive Artifacts
         shell: bash
@@ -86,13 +89,13 @@ jobs:
 
           if [[ "${{ matrix.platform }}" == *"darwin"* ]]; then
             # macOS: 压缩整个 .app 文件夹（Wails 3 默认生成 .app）
-            zip -r $PKG_NAME build/bin/mole.app
+            zip -r $PKG_NAME build/bin/myapp.app
           elif [[ "${{ matrix.platform }}" == *"windows"* ]]; then
             # Windows: 压缩 mole.exe
-            cd build/bin && zip ../../$PKG_NAME mole.exe
+            cd build/bin && zip ../../$PKG_NAME myapp.exe
           else
             # Linux: 打包 mole 二进制为 tar.gz
-            cd build/bin && tar -czvf ../../$PKG_NAME mole
+            cd build/bin && tar -czvf ../../$PKG_NAME myapp
           fi
 
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV

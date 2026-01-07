@@ -122,7 +122,7 @@ jobs:
 
           if [[ "${{ matrix.os }}" != *"ubuntu-latest"* ]]; then
             # macOS: 压缩整个 .app 文件夹（Wails 3 默认生成 .app）
-            zip -r $PKG_NAME bin/myapp.app
+            zip -r $PKG_NAME bin/myapp
           else
             # Linux: 打包 mole 二进制为 tar.gz
             #cd bin && tar -czvf ../$PKG_NAME myapp

@@ -72,9 +72,20 @@ jobs:
       - name: Build App
         # 编译命令，由于是嵌入式，编译出的单个文件即包含完整功能
         run: |
-          export PATH=$PATH:$(go env GOPATH)/bin
-          export CGO_ENABLED=1
           # Wails 3 核心构建命令，官方真坑，文档上是-platform，可实际却报错，也不能指定生成物名称
+          # 根据平台区分 CGO
+          if [[ "${{ matrix.os }}" == "windows-latest" ]]; then
+            # Windows 编译 Wails 3 通常无需 CGO，且更稳定
+            export CGO_ENABLED=0
+          else
+            # macOS 和 Linux 必须开启 CGO
+            GOPATH_BIN=$(go env GOPATH)/bin
+            export PATH=$PATH:$GOPATH_BIN
+            export CGO_ENABLED=1
+          fi
+
+          # 执行构建
+          echo "Building for ${{ matrix.platform }} (CGO_ENABLED=$CGO_ENABLED)..."
           wails3 build
           echo "==== Current Build Directory: build/bin ===="
           ls -R build/bin

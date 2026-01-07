@@ -109,7 +109,7 @@ jobs:
           # 格式化包名，如 mole_windows_amd64.zip
           PKG_NAME="mole_windows_amd64.zip"
           # Windows: 压缩 mole.exe
-          cd bin && zip ../$PKG_NAME myapp.exe
+          7z a -tzip "$PKG_NAME" bin/myapp.exe
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
 
       - name: Archive Artifacts Not Windows
@@ -125,7 +125,8 @@ jobs:
             zip -r $PKG_NAME bin/myapp.app
           else
             # Linux: 打包 mole 二进制为 tar.gz
-            cd bin && tar -czvf ../$PKG_NAME myapp
+            #cd bin && tar -czvf ../$PKG_NAME myapp
+            tar -czvf $PKG_NAME bin/myapp
           fi
 
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV

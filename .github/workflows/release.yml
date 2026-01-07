@@ -38,7 +38,9 @@ jobs:
         if: matrix.os == 'ubuntu-latest'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.0-dev
+          # 2026 年 Wails 3 兼容性最高的依赖组合
+          sudo apt-get install -y libgtk-3-dev libwebkit2gtk-4.1-dev || sudo apt-get install -y libwebkit2gtk-4.0-dev
+          sudo apt-get install -y libayatana-appindicator3-dev # 用了系统托盘功能需要这个
 
       - name: Install Wails 3
         run: go install github.com

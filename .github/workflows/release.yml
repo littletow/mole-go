@@ -135,6 +135,6 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ${{ matrix.release_name }}
-          draft: true # 生成草稿，方便手动在网页端填写描述和引流链接
+          draft: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

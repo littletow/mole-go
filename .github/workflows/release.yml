@@ -6,6 +6,9 @@ on:
       - "v*" # 推送 v1.0.0 这种标签时触发
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
@@ -77,8 +80,8 @@ jobs:
           # 执行构建
           echo "Building for ${{ matrix.platform }} (CGO_ENABLED=$CGO_ENABLED)..."
           wails3 build
-          echo "==== Current Build Directory: build/bin ===="
-          ls -R build/bin
+          echo "==== Current Build Directory: bin ===="
+          ls -R bin
           echo "==========================================="
 
       - name: Build App Not Windows
@@ -95,8 +98,8 @@ jobs:
           # 执行构建
           echo "Building for ${{ matrix.platform }} (CGO_ENABLED=$CGO_ENABLED)..."
           wails3 build
-          echo "==== Current Build Directory: build/bin ===="
-          ls -R build/bin
+          echo "==== Current Build Directory: bin ===="
+          ls -R bin
           echo "==========================================="
 
       - name: Archive Artifacts Windows
@@ -106,7 +109,7 @@ jobs:
           # 格式化包名，如 mole_windows_amd64.zip
           PKG_NAME="mole_windows_amd64.zip"
           # Windows: 压缩 mole.exe
-          cd build/bin && zip ../../$PKG_NAME myapp.exe
+          cd bin && zip ../$PKG_NAME myapp.exe
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV
 
       - name: Archive Artifacts Not Windows
@@ -119,10 +122,10 @@ jobs:
 
           if [[ "${{ matrix.os }}" != *"ubuntu-latest"* ]]; then
             # macOS: 压缩整个 .app 文件夹（Wails 3 默认生成 .app）
-            zip -r $PKG_NAME build/bin/myapp.app
+            zip -r $PKG_NAME bin/myapp.app
           else
             # Linux: 打包 mole 二进制为 tar.gz
-            cd build/bin && tar -czvf ../../$PKG_NAME myapp
+            cd bin && tar -czvf ../$PKG_NAME myapp
           fi
 
           echo "PKG_NAME=$PKG_NAME" >> $GITHUB_ENV

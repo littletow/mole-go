@@ -11,50 +11,29 @@ jobs:
     strategy:
       matrix:
         include:
-          # Windows - 习惯使用 .zip
           - {
               os: windows-latest,
-              target_os: windows,
-              arch: amd64,
+              platform: "windows/amd64",
+              pkg_ext: ".zip",
               suffix: ".exe",
-              pkg_ext: ".zip",
-            }
-          - {
-              os: windows-latest,
-              target_os: windows,
-              arch: arm64,
-              suffix: ".exe",
-              pkg_ext: ".zip",
-            }
-          # macOS - 必须压缩整个 .app 文件夹
-          - {
-              os: macos-latest,
-              target_os: darwin,
-              arch: amd64,
-              suffix: ".app",
-              pkg_ext: ".zip",
             }
           - {
               os: macos-latest,
-              target_os: darwin,
-              arch: arm64,
-              suffix: ".app",
+              platform: "darwin/amd64",
               pkg_ext: ".zip",
-            }
-          # Linux - 习惯使用 .tar.gz
-          - {
-              os: ubuntu-latest,
-              target_os: linux,
-              arch: amd64,
               suffix: "",
-              pkg_ext: ".tar.gz",
             }
           - {
-              os: ubuntu-latest,
-              target_os: linux,
-              arch: arm64,
+              os: macos-latest,
+              platform: "darwin/arm64",
+              pkg_ext: ".zip",
               suffix: "",
+            }
+          - {
+              os: ubuntu-latest,
+              platform: "linux/amd64",
               pkg_ext: ".tar.gz",
+              suffix: "",
             }
 
     runs-on: ${{ matrix.os }}
@@ -96,21 +75,23 @@ jobs:
           export PATH=$PATH:$(go env GOPATH)/bin
           export CGO_ENABLED=1
           # Wails 3 核心构建命令
-          wails3 build -os ${{ matrix.target_os }} -arch ${{ matrix.arch }} -o mole${{ matrix.suffix }}
+          wails3 build -platform ${{ matrix.platform }} -o mole${{ matrix.suffix }}
 
       - name: Archive Artifacts
         shell: bash
         run: |
-          PKG_NAME="mole_${{ matrix.target_os }}_${{ matrix.arch }}${{ matrix.pkg_ext }}"
+          # 格式化包名，如 mole_windows_amd64.zip
+          SAFE_NAME=$(echo "${{ matrix.platform }}" | tr '/' '_')
+          PKG_NAME="mole_${SAFE_NAME}${{ matrix.pkg_ext }}"
 
-          if [ "${{ matrix.target_os }}" = "darwin" ]; then
-            # macOS: 递归压缩 .app
+          if [[ "${{ matrix.platform }}" == *"darwin"* ]]; then
+            # macOS: 压缩整个 .app 文件夹（Wails 3 默认生成 .app）
             zip -r $PKG_NAME build/bin/mole.app
-          elif [ "${{ matrix.target_os }}" = "windows" ]; then
-            # Windows: 压缩 exe
+          elif [[ "${{ matrix.platform }}" == *"windows"* ]]; then
+            # Windows: 压缩 mole.exe
             cd build/bin && zip ../../$PKG_NAME mole.exe
           else
-            # Linux: 打包为 tar.gz
+            # Linux: 打包 mole 二进制为 tar.gz
             cd build/bin && tar -czvf ../../$PKG_NAME mole
           fi
 

@@ -405,11 +405,9 @@ func (s *MoleService) startFrp() {
 
 	// 1. 创建命令
 	s.frpCmd = exec.Command(frpcPath, "-c", tomlPath)
-	// 2. 针对 Windows 隐藏黑窗口
-	if runtime.GOOS == "windows" {
-		// 使用 windows 专用的属性隐藏窗口
-		s.frpCmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	}
+
+	s.frpCmd.SysProcAttr = &syscall.SysProcAttr{}
+	setHideWindow(s.frpCmd.SysProcAttr) // 直接调用，编译器会根据平台自动选择对应的实现
 
 	// 创建管道获取输出
 	stdout, _ := s.frpCmd.StdoutPipe()
@@ -498,10 +496,8 @@ func (s *MoleService) stopFrp() {
 		cmd := exec.Command("taskkill", "/F", "/T", "/PID", pid)
 
 		// 关键：在 Windows 下隐藏控制台窗口
-		cmd.SysProcAttr = &syscall.SysProcAttr{
-			HideWindow:    true,       // 隐藏窗口
-			CreationFlags: 0x08000000, // CREATE_NO_WINDOW (可选，更彻底的控制)
-		}
+		cmd.SysProcAttr = &syscall.SysProcAttr{}
+		setHideWindow(cmd.SysProcAttr) // 直接调用，编译器会根据平台自动选择对应的实现
 
 		cmd.Run()
 	} else {

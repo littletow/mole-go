@@ -1,4 +1,4 @@
-version: '3'
+version: "3"
 
 includes:
   common: ./build/Taskfile.yml
@@ -9,9 +9,9 @@ includes:
   android: ./build/android/Taskfile.yml
 
 vars:
-  APP_NAME: "myapp"
+  APP_NAME: "mole"
   BIN_DIR: "bin"
-  VITE_PORT: '{{.WAILS_VITE_PORT | default 9245}}'
+  VITE_PORT: "{{.WAILS_VITE_PORT | default 9245}}"
 
 tasks:
   build:
